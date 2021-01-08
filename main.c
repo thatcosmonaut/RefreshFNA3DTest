@@ -8,6 +8,12 @@
 
 #include <Refresh.h>
 #include <Refresh_Image.h>
+#include <FNA3D.h>
+
+#define MOJOSHADER_NO_VERSION_INCLUDE
+#define MOJOSHADER_EFFECT_SUPPORT
+#include <mojoshader.h>
+#include <mojoshader_effects.h>
 
 typedef struct Vertex
 {
@@ -21,6 +27,13 @@ typedef struct RaymarchUniforms
 	float resolutionX, resolutionY;
 } RaymarchUniforms;
 
+typedef struct FNAVertex
+{
+	float x, y;
+	float u, v;
+	uint32_t color;
+} FNAVertex;
+
 int main(int argc, char *argv[])
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) < 0)
@@ -32,20 +45,38 @@ int main(int argc, char *argv[])
 	const int windowWidth = 1280;
 	const int windowHeight = 720;
 
+	SDL_SetHint("FNA3D_FORCE_DRIVER", "Vulkan");
+
+	uint32_t windowFlags = FNA3D_PrepareWindowAttributes();
+
 	SDL_Window *window = SDL_CreateWindow(
 		"Refresh Test",
 		SDL_WINDOWPOS_UNDEFINED,
 		SDL_WINDOWPOS_UNDEFINED,
 		windowWidth,
 		windowHeight,
-		SDL_WINDOW_VULKAN
+		windowFlags
 	);
 
-	Refresh_PresentationParameters presentationParameters;
-	presentationParameters.deviceWindowHandle = window;
-	presentationParameters.presentMode = REFRESH_PRESENTMODE_IMMEDIATE;
+	int width, height;
+	FNA3D_GetDrawableSize(window, &width, &height);
 
-	Refresh_Device *device = Refresh_CreateDevice(&presentationParameters, 1);
+	FNA3D_PresentationParameters presentationParameters;
+	SDL_memset(&presentationParameters, 0, sizeof(presentationParameters));
+	presentationParameters.backBufferWidth = width;
+	presentationParameters.backBufferHeight = height;
+	presentationParameters.deviceWindowHandle = window;
+
+	FNA3D_Device* fnaDevice = FNA3D_CreateDevice(&presentationParameters, 0);
+
+	VkInstance instance;
+	VkPhysicalDevice physicalDevice;
+	VkDevice logicalDevice;
+	uint32_t deviceQueueFamilyIndex;
+
+	FNA3D_GetVulkanHandles_EXT(fnaDevice, &instance, &physicalDevice, &logicalDevice, &deviceQueueFamilyIndex);
+
+	Refresh_Device* device = Refresh_CreateDeviceExternal_EXT(instance, physicalDevice, logicalDevice, deviceQueueFamilyIndex, 1);
 
 	bool quit = false;
 
@@ -221,7 +252,7 @@ int main(int argc, char *argv[])
 		windowWidth,
 		windowHeight,
 		1,
-		REFRESH_TEXTUREUSAGE_COLOR_TARGET_BIT
+		REFRESH_TEXTUREUSAGE_COLOR_TARGET_BIT | REFRESH_TEXTUREUSAGE_SAMPLER_BIT
 	);
 
 	Refresh_TextureSlice mainColorTargetTextureSlice;
@@ -398,7 +429,7 @@ int main(int argc, char *argv[])
 
 	Refresh_DepthStencilValue depthStencilClear;
 	depthStencilClear.depth = 1.0f;
-	depthStencilClear.stencil = 0.0f;
+	depthStencilClear.stencil = 0;
 
 	/* Sampling */
 
@@ -440,6 +471,123 @@ int main(int argc, char *argv[])
 	uint8_t screenshotKey = 0;
 	uint8_t *screenshotPixels = SDL_malloc(sizeof(uint8_t) * windowWidth * windowHeight * 4);
 	Refresh_Buffer *screenshotBuffer = Refresh_CreateBuffer(device, 0, windowWidth * windowHeight * 4);
+
+	/* FNA3D states */
+
+	FNA3D_Viewport fnaViewport;
+	fnaViewport.x = 0;
+	fnaViewport.y = 0;
+	fnaViewport.w = width;
+	fnaViewport.h = height;
+	fnaViewport.minDepth = 0;
+	fnaViewport.maxDepth = 1;
+	FNA3D_SetViewport(fnaDevice, &fnaViewport);
+
+	FNA3D_BlendState fnaBlendState;
+	fnaBlendState.alphaBlendFunction = FNA3D_BLENDFUNCTION_ADD;
+	fnaBlendState.alphaDestinationBlend = FNA3D_BLEND_INVERSESOURCEALPHA;
+	fnaBlendState.alphaSourceBlend = FNA3D_BLEND_ONE;
+	FNA3D_Color blendFactor = { 0xff, 0xff, 0xff, 0xff };
+	fnaBlendState.blendFactor = blendFactor;
+	fnaBlendState.colorBlendFunction = FNA3D_BLENDFUNCTION_ADD;
+	fnaBlendState.colorDestinationBlend = FNA3D_BLEND_INVERSESOURCEALPHA;
+	fnaBlendState.colorSourceBlend = FNA3D_BLEND_ONE;
+	fnaBlendState.colorWriteEnable = FNA3D_COLORWRITECHANNELS_ALL;
+	fnaBlendState.colorWriteEnable1 = FNA3D_COLORWRITECHANNELS_ALL;
+	fnaBlendState.colorWriteEnable2 = FNA3D_COLORWRITECHANNELS_ALL;
+	fnaBlendState.colorWriteEnable3 = FNA3D_COLORWRITECHANNELS_ALL;
+	fnaBlendState.multiSampleMask = -1;
+	FNA3D_SetBlendState(fnaDevice, &fnaBlendState);
+
+	FNA3D_DepthStencilState fnaDepthStencilState;
+	fnaDepthStencilState.ccwStencilDepthBufferFail = 0;
+	fnaDepthStencilState.ccwStencilFail = 0;
+	fnaDepthStencilState.ccwStencilFunction = 0;
+	fnaDepthStencilState.ccwStencilPass = 0;
+	fnaDepthStencilState.referenceStencil = 0;
+	fnaDepthStencilState.depthBufferEnable = 0;
+	fnaDepthStencilState.depthBufferFunction = 0;
+	fnaDepthStencilState.depthBufferWriteEnable = 0;
+	fnaDepthStencilState.stencilDepthBufferFail = 0;
+	fnaDepthStencilState.stencilEnable = 0;
+	fnaDepthStencilState.stencilFail = 0;
+	fnaDepthStencilState.stencilFunction = 0;
+	fnaDepthStencilState.stencilMask = 0;
+	fnaDepthStencilState.stencilPass = 0;
+	fnaDepthStencilState.stencilWriteMask = 0;
+	fnaDepthStencilState.twoSidedStencilMode = 0;
+	FNA3D_SetDepthStencilState(fnaDevice, &fnaDepthStencilState);
+
+	FNA3D_RasterizerState fnaRasterizerState;
+	fnaRasterizerState.cullMode = FNA3D_CULLMODE_NONE;
+	fnaRasterizerState.fillMode = FNA3D_FILLMODE_SOLID;
+	fnaRasterizerState.depthBias = 0;
+	fnaRasterizerState.multiSampleAntiAlias = 1;
+	fnaRasterizerState.scissorTestEnable = 0;
+	fnaRasterizerState.slopeScaleDepthBias = 0;
+	FNA3D_ApplyRasterizerState(fnaDevice, &fnaRasterizerState);
+
+	/* load effect */
+	FNA3D_Effect* effect = NULL;
+	MOJOSHADER_effect* effectData = NULL;
+
+	/* FIXME: use SDL */
+	FILE* effectFile = fopen("SpriteEffect.fxb", "rb");
+	fseek(effectFile, 0, SEEK_END);
+	uint32_t effectCodeLength = ftell(effectFile);
+	fseek(effectFile, 0, SEEK_SET);
+	uint8_t* effectCode = malloc(effectCodeLength);
+	fread(effectCode, 1, effectCodeLength, effectFile);
+	fclose(effectFile);
+	FNA3D_CreateEffect(fnaDevice, effectCode, effectCodeLength, &effect, &effectData);
+	free(effectCode);
+
+	/* create external texture*/
+
+	FNA3D_Texture* externalTexture = FNA3D_CreateExternalSamplerTexture_EXT(fnaDevice, Refresh_GetVkImageView_EXT(device, mainColorTargetTexture));
+
+	/* create FNA vertices */
+
+	FNA3D_VertexElement vertexElements[3];
+	vertexElements[0].offset = 0;
+	vertexElements[0].usageIndex = 0;
+	vertexElements[0].vertexElementFormat = FNA3D_VERTEXELEMENTFORMAT_VECTOR2;
+	vertexElements[0].vertexElementUsage = FNA3D_VERTEXELEMENTUSAGE_POSITION;
+
+	vertexElements[1].offset = sizeof(float) * 2;
+	vertexElements[1].usageIndex = 0;
+	vertexElements[1].vertexElementFormat = FNA3D_VERTEXELEMENTFORMAT_VECTOR2;
+	vertexElements[1].vertexElementUsage = FNA3D_VERTEXELEMENTUSAGE_TEXTURECOORDINATE;
+
+	vertexElements[2].offset = sizeof(float) * 4;
+	vertexElements[2].usageIndex = 0;
+	vertexElements[2].vertexElementFormat = FNA3D_VERTEXELEMENTFORMAT_COLOR;
+	vertexElements[2].vertexElementUsage = FNA3D_VERTEXELEMENTUSAGE_COLOR;
+
+	FNA3D_VertexDeclaration vertexDeclaration;
+	vertexDeclaration.elementCount = 3;
+	vertexDeclaration.vertexStride = sizeof(Vertex);
+	vertexDeclaration.elements = vertexElements;
+
+	FNAVertex fnaVertices[6] =
+	{
+		{ 50, 50, 0, 0, 0xffff0000 },
+		{ 150, 50, 1, 0, 0xff0000ff },
+		{ 150, 150, 1, 1, 0xff00ffff },
+		{ 150, 150, 1, 1, 0xff00ffff },
+		{ 50, 150, 0, 1, 0xff00ff00 },
+		{ 50, 50, 0, 0, 0xffff0000 },
+	};
+
+	// vertex buffer
+	FNA3D_Buffer* fnaVertexBuffer = FNA3D_GenVertexBuffer(fnaDevice, 0, FNA3D_BUFFERUSAGE_WRITEONLY, sizeof(FNAVertex) * 6);
+	FNA3D_SetVertexBufferData(fnaDevice, fnaVertexBuffer, 0, fnaVertices, sizeof(FNAVertex) * 6, 1, 1, FNA3D_SETDATAOPTIONS_NONE);
+
+	FNA3D_VertexBufferBinding vertexBufferBinding;
+	vertexBufferBinding.instanceFrequency = 0;
+	vertexBufferBinding.vertexBuffer = fnaVertexBuffer;
+	vertexBufferBinding.vertexDeclaration = vertexDeclaration;
+	vertexBufferBinding.vertexOffset = 0;
 
 	while (!quit)
 	{
@@ -530,13 +678,62 @@ int main(int argc, char *argv[])
 				Refresh_CopyTextureToBuffer(device, commandBuffer, &mainColorTargetTextureSlice, screenshotBuffer);
 			}
 
-			Refresh_QueuePresent(device, commandBuffer, &mainColorTargetTextureSlice, &flip, REFRESH_FILTER_NEAREST);
 			Refresh_Submit(device, 1, &commandBuffer);
 
 			if (screenshotKey == 1)
 			{
 				Refresh_Image_SavePNG("screenshot.png", windowWidth, windowHeight, screenshotPixels);
 			}
+
+			MOJOSHADER_effectStateChanges stateChanges;
+			memset(&stateChanges, 0, sizeof(stateChanges));
+			FNA3D_ApplyEffect(fnaDevice, effect, 0, &stateChanges);
+
+			FNA3D_SamplerState samplerState;
+			memset(&samplerState, 0, sizeof(samplerState));
+			samplerState.addressU = FNA3D_TEXTUREADDRESSMODE_CLAMP;
+			samplerState.addressV = FNA3D_TEXTUREADDRESSMODE_CLAMP;
+			samplerState.addressW = FNA3D_TEXTUREADDRESSMODE_WRAP;
+			samplerState.filter = FNA3D_TEXTUREFILTER_LINEAR;
+			samplerState.maxAnisotropy = 4;
+			samplerState.maxMipLevel = 0;
+			samplerState.mipMapLevelOfDetailBias = 0;
+			FNA3D_VerifySampler(fnaDevice, 0, externalTexture, &samplerState);
+
+			for (int i = 0; i < effectData->param_count; i++)
+			{
+				if (SDL_strcmp("MatrixTransform", effectData->params[i].value.name) == 0)
+				{
+					// OrthographicOffCenter Matrix - value copied from XNA project
+					// todo: Do I need to worry about row-major/column-major?
+					float projectionMatrix[16] =
+					{
+						0.0015625f,
+						0,
+						0,
+						-1,
+						0,
+						-0.00277777785f,
+						0,
+						1,
+						0,
+						0,
+						1,
+						0,
+						0,
+						0,
+						0,
+						1
+					};
+					SDL_memcpy(effectData->params[i].value.values, projectionMatrix, sizeof(float) * 16);
+					break;
+				}
+			}
+
+			FNA3D_ApplyVertexBufferBindings(fnaDevice, &vertexBufferBinding, 1, 0, 0);
+			FNA3D_DrawPrimitives(fnaDevice, FNA3D_PRIMITIVETYPE_TRIANGLELIST, 0, 2);
+
+			FNA3D_SwapBuffers(fnaDevice, NULL, NULL, window);
 		}
 	}
 
