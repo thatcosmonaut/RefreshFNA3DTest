@@ -74,9 +74,17 @@ int main(int argc, char *argv[])
 	VkDevice logicalDevice;
 	uint32_t deviceQueueFamilyIndex;
 
-	FNA3D_GetVulkanHandles_EXT(fnaDevice, &instance, &physicalDevice, &logicalDevice, &deviceQueueFamilyIndex);
+	FNA3D_RenderingContext_EXT *vulkanRenderingContext = FNA3D_GetRenderingContext_EXT(fnaDevice);
 
-	Refresh_Device* device = Refresh_CreateDeviceExternal_EXT(instance, physicalDevice, logicalDevice, deviceQueueFamilyIndex, 1);
+	Refresh_Device* device = Refresh_CreateDeviceExternal_EXT(
+		vulkanRenderingContext->renderingContext.vulkan.instance,
+		vulkanRenderingContext->renderingContext.vulkan.physicalDevice,
+		vulkanRenderingContext->renderingContext.vulkan.logicalDevice,
+		vulkanRenderingContext->renderingContext.vulkan.queueFamilyIndex,
+		1
+	);
+
+	SDL_free(vulkanRenderingContext);
 
 	bool quit = false;
 
