@@ -8,7 +8,10 @@
 
 #include <Refresh.h>
 #include <Refresh_Image.h>
+#include <Refresh_SysRenderer.h>
+
 #include <FNA3D.h>
+#include <FNA3D_SysRenderer.h>
 
 #define MOJOSHADER_NO_VERSION_INCLUDE
 #define MOJOSHADER_EFFECT_SUPPORT
@@ -69,22 +72,17 @@ int main(int argc, char *argv[])
 
 	FNA3D_Device* fnaDevice = FNA3D_CreateDevice(&presentationParameters, 0);
 
-	VkInstance instance;
-	VkPhysicalDevice physicalDevice;
-	VkDevice logicalDevice;
-	uint32_t deviceQueueFamilyIndex;
+	FNA3D_SysRendererEXT vulkanRenderingContext;
+	vulkanRenderingContext.version = 0;
+	FNA3D_GetSysRendererEXT(fnaDevice, &vulkanRenderingContext);
 
-	FNA3D_RenderingContext_EXT *vulkanRenderingContext = FNA3D_GetRenderingContext_EXT(fnaDevice);
-
-	Refresh_Device* device = Refresh_CreateDeviceExternal_EXT(
-		vulkanRenderingContext->renderingContext.vulkan.instance,
-		vulkanRenderingContext->renderingContext.vulkan.physicalDevice,
-		vulkanRenderingContext->renderingContext.vulkan.logicalDevice,
-		vulkanRenderingContext->renderingContext.vulkan.queueFamilyIndex,
+	Refresh_Device* device = Refresh_CreateDeviceUsingExternal(
+		vulkanRenderingContext.renderer.vulkan.instance,
+		vulkanRenderingContext.renderer.vulkan.physicalDevice,
+		vulkanRenderingContext.renderer.vulkan.logicalDevice,
+		vulkanRenderingContext.renderer.vulkan.queueFamilyIndex,
 		1
 	);
-
-	SDL_free(vulkanRenderingContext);
 
 	bool quit = false;
 
@@ -552,7 +550,16 @@ int main(int argc, char *argv[])
 
 	/* create external texture*/
 
-	FNA3D_Texture* externalTexture = FNA3D_CreateExternalSamplerTexture_EXT(fnaDevice, Refresh_GetVkImageView_EXT(device, mainColorTargetTexture));
+	Refresh_TextureHandlesEXT textureHandles;
+	Refresh_GetTextureHandlesEXT(device, mainColorTargetTexture, &textureHandles);
+
+	FNA3D_SysTextureEXT externalTextureCreateInfo;
+	externalTextureCreateInfo.rendererType = FNA3D_RENDERER_TYPE_VULKAN_EXT;
+	externalTextureCreateInfo.texture.vulkan.image = textureHandles.texture.vulkan.image;
+	externalTextureCreateInfo.texture.vulkan.view = textureHandles.texture.vulkan.view;
+	externalTextureCreateInfo.version = 0;
+
+	FNA3D_Texture* externalTexture = FNA3D_CreateSysTextureEXT(fnaDevice, &externalTextureCreateInfo);
 
 	/* create FNA vertices */
 
